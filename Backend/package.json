@@ -1,0 +1,17 @@
+{
+  "name": "fuwafuwacon-backend",
+  "version": "1.0.0",
+  "description": "Backend para FuwaFuwaCon",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
