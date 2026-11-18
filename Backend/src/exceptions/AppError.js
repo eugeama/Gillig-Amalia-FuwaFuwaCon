@@ -25,4 +25,22 @@ export class ConflictError extends AppError {
     }
 }
 
+export class ForbiddenError extends AppError {
+    constructor(message) {
+        super(message, 403);
+    }
+}
+
+export class AuthenticationError extends AppError {
+    constructor(message) {
+        super(message, 401);
+    }
+}
+
+export class ServiceUnavailableError extends AppError {
+    constructor(message) {
+        super(message, 503);
+    }
+}
+
 export default AppError;

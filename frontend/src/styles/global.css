@@ -1,0 +1,94 @@
+:root {
+  --rosa: #c9609f;
+  --rosa-claro: #eaa6d0;
+  --fondo: #eef3f6;
+  --celeste: #85d4f4;
+  --gris: #d9d9d9;
+  --blanco: #ffffff;
+  --peligro: #b3261e;
+  --exito: #1f7a4d;
+  --fuente-titulos: "Coiny", sans-serif;
+  --fuente-texto: "Madimi One", sans-serif;
+  --radio: 1rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--rosa);
+  font-family: var(--fuente-texto);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-family: var(--fuente-titulos);
+}
+
+p {
+  margin: 0;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--rosa-oscuro);
+  outline-offset: 2px;
+}
+
+.bienvenida,
+.sobre-nosotros,
+.productos,
+.pagina-clientes {
+  padding: 3rem max(2rem, calc((100% - 62rem) / 2));
+}
+
+.titulo-principal {
+  font-size: 2.25rem;
+  text-align: center;
+  color: var(--rosa);
+}
+
+.titulo-secundario {
+  font-size: 1.6rem;
+  text-align: center;
+  color: var(--rosa);
+}
+
+.texto-centrado {
+  max-width: 48rem;
+  margin: 0 auto;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.solo-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

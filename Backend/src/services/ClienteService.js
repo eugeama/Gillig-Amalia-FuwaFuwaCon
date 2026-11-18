@@ -1,56 +1,31 @@
-import ClienteRepository from '../repositories/ClienteRepository.js';
-import { Messages } from '../enums/Messages.js';
-import { BadRequestError, NotFoundError, ConflictError } from '../exceptions/AppError.js';
+import SistemaService from './SistemaService.js';
+import { NotFoundError } from '../exceptions/AppError.js';
 
 class ClienteService {
     getAllClientes() {
-        return ClienteRepository.findAll();
+        return SistemaService.listarUsuarios().filter((usuario) => usuario.tipo === 'cliente');
     }
 
     getClienteById(id) {
-        const cliente = ClienteRepository.findById(id);
+        const cliente = this.getAllClientes().find((usuario) => usuario.id === Number(id));
         if (!cliente) {
-            throw new NotFoundError(Messages.USER_NOT_FOUND);
+            throw new NotFoundError('El cliente no existe');
         }
         return cliente;
     }
 
     createCliente(clienteData) {
-        const { nombre, email, contrasena } = clienteData;
-
-        if (!nombre || !email || !contrasena) {
-            throw new BadRequestError(Messages.INVALID_DATA);
-        }
-
-        const existingCliente = ClienteRepository.findByEmail(email);
-        if (existingCliente) {
-            throw new ConflictError(Messages.DUPLICATED_RESOURCE);
-        }
-
-        return ClienteRepository.create(clienteData);
+        return SistemaService.crearCliente(clienteData);
     }
 
     updateCliente(id, clienteData) {
-        const existingCliente = ClienteRepository.findById(id);
-        if (!existingCliente) {
-            throw new NotFoundError(Messages.USER_NOT_FOUND);
-        }
-
-        if (clienteData.email && clienteData.email.toLowerCase() !== existingCliente.email.toLowerCase()) {
-            const emailInUse = ClienteRepository.findByEmail(clienteData.email);
-            if (emailInUse && emailInUse.id !== existingCliente.id) {
-                throw new ConflictError(Messages.DUPLICATED_RESOURCE);
-            }
-        }
-
-        return ClienteRepository.update(id, clienteData);
+        const existing = this.getClienteById(id);
+        return SistemaService.actualizarUsuario(existing.id, clienteData);
     }
 
     deleteCliente(id) {
-        const deleted = ClienteRepository.delete(id);
-        if (!deleted) {
-            throw new NotFoundError(Messages.USER_NOT_FOUND);
-        }
+        const cliente = this.getClienteById(id);
+        SistemaService.eliminarUsuario(cliente.id);
         return { message: "Cliente eliminado correctamente" };
     }
 }

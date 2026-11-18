@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/app.js",
-    "dev": "nodemon src/app.js"
+    "dev": "nodemon --ignore data/ src/app.js",
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.19.2"

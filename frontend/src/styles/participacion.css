@@ -1,0 +1,281 @@
+.pagina-participacion {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 3rem max(1rem, calc((100% - 62rem) / 2));
+  min-height: 70vh;
+}
+
+.pagina-participacion__cabecera {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.aviso-api {
+  padding: 1rem 1.25rem;
+  border-left: 4px solid var(--rosa);
+  border-radius: 0.5rem;
+  background: var(--blanco);
+  color: var(--rosa);
+  font-size: 0.9rem;
+}
+
+.aviso-api strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.participacion-opciones {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+
+.evento__cabecera,
+.panel-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+}
+
+.evento__fecha {
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: var(--rosa-claro);
+  color: var(--rosa);
+}
+
+.evento__datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem 1.5rem;
+  margin: 0;
+  width: 100%;
+}
+
+.evento__datos dt,
+.datos-cuenta dt {
+  font-weight: 700;
+}
+
+.evento__datos dd,
+.datos-cuenta dd {
+  margin: 0.2rem 0 0;
+  font-weight: 400;
+}
+
+.evento__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.stands-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1rem;
+  width: 100%;
+}
+
+.stand-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 2px solid var(--exito);
+  border-radius: 0.75rem;
+  background: #e7f5ec;
+  color: #185735;
+}
+
+.stand-card--ocupado {
+  border-color: #9c596c;
+  background: #f7e9ef;
+  color: var(--rosa);
+}
+
+.stand-card h3 {
+  font-size: 1.1rem;
+}
+
+.concurso-card {
+  justify-content: space-between;
+  min-height: 12rem;
+}
+
+.estado-inscripcion {
+  color: var(--exito);
+}
+
+.reserva-card {
+  border-left: 4px solid var(--rosa);
+}
+
+.reserva-admin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  width: 100%;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rosa-claro);
+}
+
+.reserva-admin h3 {
+  color: var(--rosa);
+}
+
+.datos-cuenta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.formulario--admin {
+  width: 100%;
+  max-width: 34rem;
+  margin: 0;
+  padding: 1rem 0;
+  background: transparent;
+}
+
+.formulario--admin h3 {
+  color: var(--rosa);
+}
+
+.catalogo-formularios {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+}
+
+.sesion-cargando {
+  padding: 1rem;
+  text-align: center;
+}
+
+.panel-participacion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--blanco);
+  border-radius: var(--radio);
+  min-width: 0;
+}
+
+.panel-participacion .titulo-secundario {
+  text-align: left;
+}
+
+.panel-participacion .campo {
+  width: 100%;
+}
+
+.lista-reglas {
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.lista-reglas li + li {
+  margin-top: 0.5rem;
+}
+
+.cuenta-opciones {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.formulario__ayuda {
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.campo__input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.campo__input:disabled {
+  opacity: 1;
+  background: var(--fondo);
+  color: var(--rosa);
+}
+
+.estados-reserva {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.estados-reserva dd {
+  margin: 0.5rem 0 0;
+  font-weight: 400;
+}
+
+.estado-reserva {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+}
+
+.estado-reserva--pendiente {
+  background: #fff0c2;
+  color: #644800;
+}
+
+.estado-reserva--confirmada {
+  background: #d6efdf;
+  color: #185735;
+}
+
+.estado-reserva--cancelada {
+  background: #fce1df;
+  color: #8c211a;
+}
+
+.estado-reserva--finalizada {
+  background: var(--fondo);
+  color: var(--rosa);
+}
+
+.navbar__lista {
+  gap: 0.75rem 1.25rem;
+}
+
+.navbar__enlace {
+  display: inline-block;
+  padding-block: 0.25rem;
+}
+
+@media (max-width: 48rem) {
+  .navbar {
+    position: static;
+  }
+
+  .participacion-opciones {
+    grid-template-columns: 1fr;
+  }
+
+  .catalogo-formularios {
+    grid-template-columns: 1fr;
+  }
+
+  .pagina-participacion .titulo-principal {
+    font-size: 1.9rem;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
