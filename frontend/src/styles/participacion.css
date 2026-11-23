@@ -31,21 +31,14 @@
   gap: 1.5rem;
 }
 
-.evento__cabecera,
-.panel-titulo {
+.panel-titulo,
+.evento__cabecera {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 1rem;
   width: 100%;
-}
-
-.evento__fecha {
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  background: var(--rosa-claro);
-  color: var(--rosa);
 }
 
 .evento__datos {
@@ -61,16 +54,130 @@
   font-weight: 700;
 }
 
-.evento__datos dd,
 .datos-cuenta dd {
   margin: 0.2rem 0 0;
   font-weight: 400;
 }
 
-.evento__acciones {
+.evento-tarjeta {
+  display: grid;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: var(--blanco);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.08);
+}
+
+.evento-tarjeta__cabecera {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1.5rem;
+  background: var(--rosa);
+  color: var(--blanco);
+  text-align: center;
+}
+
+.evento-tarjeta__titulo {
+  margin: 0;
+}
+
+.evento-tarjeta__cuerpo {
+  display: grid;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.evento-tarjeta__datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem 1.5rem;
+  margin: 0;
+  text-align: center;
+}
+
+.evento-tarjeta__datos dt {
+  font-weight: 700;
+  color: var(--rosa);
+}
+
+.evento-tarjeta__datos dd {
+  margin: 0.25rem 0 0;
+}
+
+.evento-tarjeta__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.selector-fechas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.selector-fechas__fecha {
+  padding: 0.6rem 1.5rem;
+  border: 2px solid var(--rosa);
+  border-radius: 999px;
+  background: var(--blanco);
+  color: var(--rosa);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.selector-fechas__fecha:hover {
+  filter: brightness(0.96);
+}
+
+.selector-fechas__fecha[aria-pressed="true"] {
+  background: var(--rosa);
+  color: var(--blanco);
+}
+
+.selector-fechas__fecha:focus-visible {
+  outline: 3px solid var(--rosa-claro);
+  outline-offset: 3px;
+}
+
+.editor-fechas__agregar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.editor-fechas__lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.editor-fechas__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.85rem;
+  border-radius: 999px;
+  background: var(--rosa-claro);
+  color: var(--rosa);
+}
+
+.plano-mesas {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  margin-top: 1rem;
+  border-radius: 8px;
 }
 
 .stands-grid {
@@ -231,14 +338,10 @@
   color: #644800;
 }
 
-.estado-reserva--confirmada {
-  background: #d6efdf;
-  color: #185735;
-}
-
+.estado-reserva--confirmada,
 .estado-reserva--cancelada {
-  background: #fce1df;
-  color: #8c211a;
+  background: var(--rosa);
+  color: var(--blanco);
 }
 
 .estado-reserva--finalizada {

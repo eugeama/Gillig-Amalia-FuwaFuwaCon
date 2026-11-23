@@ -1,57 +1,52 @@
+import { useState } from "react";
 import Boton from "../components/Boton";
 import Cargando from "../components/Cargando";
 import PaginaParticipacion from "../components/PaginaParticipacion";
+import SelectorFechas from "../components/SelectorFechas";
 import useEventos from "../hooks/useEventos";
+import { fechasVigentes, formatearMes, proximoEvento } from "../utils/fechas";
 
-const FECHA_FORMATO = new Intl.DateTimeFormat("es-AR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
+function Eventos({ onNavegar, parametros }) {
+  const { eventos, cargando } = useEventos();
+  const [fechaElegida, setFechaElegida] = useState("");
 
-function Eventos({ onNavegar }) {
-  const { eventos, cargando, recargar } = useEventos();
-  const hoy = new Date().toISOString().slice(0, 10);
-  const proximosEventos = eventos
-    .filter((evento) => evento.fecha >= hoy)
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const evento = eventos.find((item) => String(item.id) === String(parametros?.eventoId)) ?? proximoEvento(eventos);
+  const fechas = fechasVigentes(evento);
+  const fecha = fechas.includes(fechaElegida) ? fechaElegida : fechas[0];
 
   return (
     <PaginaParticipacion
-      titulo="Próximos eventos"
-      descripcion="Consultá las fechas y temáticas de la FuwaFuwaCon y elegí cómo participar."
+      titulo="Eventos"
+      descripcion="Elegí la fecha del evento y conocé sus stands y concursos."
     >
       {cargando && <Cargando mensaje="Cargando eventos..." />}
-      {!cargando && proximosEventos.length === 0 && (
+      {!cargando && !evento && (
         <div className="panel-participacion">
           <p>No hay próximos eventos publicados.</p>
-          <Boton onClick={recargar}>Volver a cargar</Boton>
         </div>
       )}
-      {!cargando && proximosEventos.map((evento) => (
-        <article className="panel-participacion evento" key={evento.id}>
-          <div className="evento__cabecera">
-            <h2 className="titulo-secundario">{evento.nombre}</h2>
-            <span className="evento__fecha">
-              {FECHA_FORMATO.format(new Date(`${evento.fecha}T12:00:00`))}
-            </span>
-          </div>
-          <dl className="evento__datos">
-            <div><dt>Temática</dt><dd>{evento.tematica || "A confirmar"}</dd></div>
-            <div><dt>Horario</dt><dd>{evento.horario || "A confirmar"}</dd></div>
-            <div><dt>Ubicación</dt><dd>{evento.ubicacion || "A confirmar"}</dd></div>
-            <div><dt>Stands</dt><dd>{evento.cantidadStands}</dd></div>
-            <div><dt>Concursos</dt><dd>{evento.cantidadConcursos}</dd></div>
-          </dl>
-          {evento.descripcion && <p>{evento.descripcion}</p>}
-          <div className="evento__acciones">
-            <Boton onClick={() => onNavegar("stands", { eventoId: evento.id })}>Ver stands</Boton>
-            <Boton variante="secundario" onClick={() => onNavegar("concursos", { eventoId: evento.id })}>
-              Ver concursos
-            </Boton>
+      {!cargando && evento && (
+        <article className="evento-tarjeta" aria-labelledby="evento-titulo">
+          <header className="evento-tarjeta__cabecera">
+            <h2 id="evento-titulo" className="evento-tarjeta__titulo">{evento.nombre}</h2>
+            <p>{formatearMes(evento.mes)}</p>
+          </header>
+          <div className="evento-tarjeta__cuerpo">
+            <SelectorFechas fechas={fechas} seleccionada={fecha} onCambiar={setFechaElegida} />
+            <dl className="evento-tarjeta__datos">
+              <div><dt>Temática</dt><dd>{evento.tematica}</dd></div>
+              <div><dt>Horario</dt><dd>{evento.horario}</dd></div>
+              <div><dt>Ubicación</dt><dd>{evento.ubicacion}</dd></div>
+            </dl>
+            <div className="evento-tarjeta__acciones">
+              <Boton onClick={() => onNavegar("stands", { eventoId: evento.id, fecha })}>Ver stands</Boton>
+              <Boton variante="secundario" onClick={() => onNavegar("concursos", { eventoId: evento.id, fecha })}>
+                Ver concursos
+              </Boton>
+            </div>
           </div>
         </article>
-      ))}
+      )}
     </PaginaParticipacion>
   );
 }

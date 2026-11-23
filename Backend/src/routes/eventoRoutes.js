@@ -15,7 +15,9 @@ function manejar(accion) {
 }
 
 router.get('/', manejar((req, res) => res.json(ApiResponse.success(SistemaService.listarEventos()))));
-router.get('/:id/stands', manejar((req, res) => res.json(ApiResponse.success(SistemaService.listarStands(req.params.id)))));
-router.get('/:id/concursos', manejar((req, res) => res.json(ApiResponse.success(SistemaService.listarConcursos(req.params.id)))));
+router.get('/:id/stands', manejar((req, res) => res.json(
+    ApiResponse.success(SistemaService.listarStands(req.params.id, req.query.fecha))
+)));
+router.get('/:id/concursos', manejar((req, res) => res.json(ApiResponse.success(SistemaService.listarConcursos(req.params.id, req.query.fecha)))));
 
 export default router;

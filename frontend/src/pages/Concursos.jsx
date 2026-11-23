@@ -3,18 +3,23 @@ import AvisoApi from "../components/AvisoApi";
 import Boton from "../components/Boton";
 import Cargando from "../components/Cargando";
 import PaginaParticipacion from "../components/PaginaParticipacion";
-import SelectorEvento from "../components/SelectorEvento";
+import SelectorFechas from "../components/SelectorFechas";
 import { getConcursos } from "../services/eventoService";
 import { getMisInscripciones, inscribirEnConcurso } from "../services/concursoService";
 import { useAuth } from "../utils/auth";
+import { fechasVigentes, proximoEvento } from "../utils/fechas";
 import { useNotificaciones } from "../utils/notificaciones";
 import useEventos from "../hooks/useEventos";
 
 function Concursos({ onNavegar, parametros }) {
   const { usuario } = useAuth();
   const { exito, error } = useNotificaciones();
-  const { eventos, cargando: cargandoEventos } = useEventos();
-  const [eventoId, setEventoId] = useState(parametros?.eventoId ? String(parametros.eventoId) : "");
+  const { eventos } = useEventos();
+  const [fechaElegida, setFechaElegida] = useState(parametros?.fecha ?? "");
+  const evento = eventos.find((item) => String(item.id) === String(parametros?.eventoId)) ?? proximoEvento(eventos);
+  const eventoId = evento ? String(evento.id) : "";
+  const fechas = fechasVigentes(evento);
+  const fecha = fechas.includes(fechaElegida) ? fechaElegida : fechas[0];
   const [concursos, setConcursos] = useState([]);
   const [inscripciones, setInscripciones] = useState([]);
   const [cargando, setCargando] = useState(false);
@@ -23,17 +28,13 @@ function Concursos({ onNavegar, parametros }) {
   const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
-    if (!eventoId && eventos.length > 0) setEventoId(String(eventos[0].id));
-  }, [eventoId, eventos]);
-
-  useEffect(() => {
-    if (!eventoId) return;
+    if (!eventoId || !fecha) return;
     let activo = true;
     setCargando(true);
     setFalloCarga(false);
 
     Promise.all([
-      getConcursos(eventoId),
+      getConcursos(eventoId, fecha),
       usuario?.tipo === "cliente" ? getMisInscripciones() : Promise.resolve([]),
     ])
       .then(([lista, misInscripciones]) => {
@@ -55,7 +56,7 @@ function Concursos({ onNavegar, parametros }) {
     return () => {
       activo = false;
     };
-  }, [eventoId, error, recarga, usuario]);
+  }, [eventoId, fecha, error, recarga, usuario]);
 
   async function inscribirse(concurso) {
     if (!usuario) {
@@ -68,13 +69,13 @@ function Concursos({ onNavegar, parametros }) {
     }
     setInscribiendo(concurso.id);
     try {
-      await inscribirEnConcurso(concurso.id);
+      await inscribirEnConcurso(concurso.id, fecha);
       setInscripciones(await getMisInscripciones());
-      setConcursos(await getConcursos(eventoId));
+      setConcursos(await getConcursos(eventoId, fecha));
       exito(`Te inscribiste en ${concurso.nombre}.`);
     } catch (err) {
       error(err.message);
-      setConcursos(await getConcursos(eventoId).catch(() => concursos));
+      setConcursos(await getConcursos(eventoId, fecha).catch(() => concursos));
     } finally {
       setInscribiendo(null);
     }
@@ -85,12 +86,10 @@ function Concursos({ onNavegar, parametros }) {
       titulo="Concursos"
       descripcion="Consultá los cupos disponibles e inscribite a los concursos del evento."
     >
-      <SelectorEvento
-        eventos={eventos}
-        eventoSeleccionado={eventoId}
-        onCambiar={setEventoId}
-        cargando={cargandoEventos}
-      />
+      <Boton variante="secundario" onClick={() => onNavegar("eventos", { eventoId })}>Volver al evento</Boton>
+      {fechas.length > 0 && (
+        <SelectorFechas fechas={fechas} seleccionada={fecha} onCambiar={setFechaElegida} />
+      )}
       {cargando && <Cargando mensaje="Cargando concursos..." />}
       {!cargando && falloCarga && (
         <div className="panel-participacion">
@@ -104,7 +103,7 @@ function Concursos({ onNavegar, parametros }) {
         ) : (
           <div className="participacion-opciones">
             {concursos.map((concurso) => {
-              const inscripto = inscripciones.some((item) => item.concursoId === concurso.id);
+              const inscripto = inscripciones.some((item) => item.concursoId === concurso.id && item.fecha === fecha);
               const deshabilitado = concurso.completo || inscripto || inscribiendo === concurso.id;
               return (
                 <article className="panel-participacion concurso-card" key={concurso.id}>

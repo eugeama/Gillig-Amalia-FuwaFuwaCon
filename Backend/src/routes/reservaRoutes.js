@@ -21,8 +21,9 @@ router.post('/', requiereTipo('emprendedor'), manejar((req, res) => {
     const reserva = SistemaService.solicitarReserva(req.usuario, req.body ?? {});
     return res.status(201).json(ApiResponse.success(reserva));
 }));
-router.delete('/:id', manejar((req, res) => res.json(ApiResponse.success(
-    SistemaService.cancelarReserva(req.usuario, req.params.id)
-))));
+router.delete('/:id', requiereTipo('emprendedor'), manejar((req, res) => {
+    SistemaService.eliminarReservaPropia(req.usuario, req.params.id);
+    return res.json(ApiResponse.success(null));
+}));
 
 export default router;

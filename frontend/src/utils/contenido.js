@@ -17,6 +17,7 @@ import youtube from "../assets/fotos/youtube.png";
 import instagram from "../assets/fotos/instagram.png";
 import twitter from "../assets/fotos/twitter.png";
 import tiktok from "../assets/fotos/tiktok.png";
+import mapaMesas from "../assets/fotos/mapa-mesas.png";
 
 export const novedades = [
   {
@@ -43,6 +44,11 @@ export const novedades = [
     "Podés conocerlos en la ZONA DE ACTIVIDADES (Adentro) casi todo el evento, o en sus juegos en el escenario de auditorio a las 15:00hs ☆",
   },
 ];
+
+export const planoMesas = {
+  imagen: mapaMesas,
+  alt: "Plano del salón con las mesas numeradas del 1 al 110 y el auditorio",
+};
 
 export const quienesSomos = {
   titulo: "¿Quiénes somos?",

@@ -3,7 +3,9 @@ import Carrusel from "../components/Carrusel";
 import Imagen from "../components/Imagen";
 import SeccionTarjetas from "../components/SeccionTarjetas";
 import { dondeEncontrarnos, novedades, queEncontrar, quienesSomos } from "../utils/contenido";
+import { fechasVigentes, proximoEvento } from "../utils/fechas";
 import useEventos from "../hooks/useEventos";
+import useNovedades from "../hooks/useNovedades";
 
 const FORMATO_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "numeric",
@@ -13,9 +15,17 @@ const FORMATO_FECHA = new Intl.DateTimeFormat("es-AR", {
 
 function Inicio({ onNavegar }) {
   const { eventos, cargando } = useEventos();
-  const proximo = eventos
-    .filter((evento) => evento.fecha >= new Date().toISOString().slice(0, 10))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
+  const { novedades: publicaciones } = useNovedades();
+  const proximo = proximoEvento(eventos);
+  const diapositivas = [
+    ...novedades,
+    ...publicaciones.map((publicacion) => ({
+      id: `publicacion-${publicacion.id}`,
+      imagen: publicacion.imagen,
+      titulo: publicacion.titulo,
+      texto: publicacion.texto,
+    })),
+  ];
 
   return (
     <>
@@ -27,10 +37,10 @@ function Inicio({ onNavegar }) {
           <p className="bienvenida__fecha">
             Próximas fechas: {cargando
               ? "consultando..."
-              : FORMATO_FECHA.format(new Date(`${proximo.fecha}T12:00:00`))}
+              : fechasVigentes(proximo).map((fecha) => FORMATO_FECHA.format(new Date(`${fecha}T12:00:00`))).join(" · ")}
           </p>
         )}
-        <Carrusel diapositivas={novedades} onVerMas={() => onNavegar("eventos")} />
+        <Carrusel diapositivas={diapositivas} onVerMas={() => onNavegar("eventos")} />
       </section>
 
       <section id="sobre-nosotros" className="sobre-nosotros" aria-labelledby="quienes-titulo">

@@ -1,27 +1,61 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import SistemaRepository from '../repositories/SistemaRepository.js';
+import SistemaRepository, { HORARIO_EVENTO, UBICACION_EVENTO } from '../repositories/SistemaRepository.js';
 import {
     BadRequestError,
     ConflictError,
     AuthenticationError,
     NotFoundError,
-    ServiceUnavailableError,
 } from '../exceptions/AppError.js';
 
 const ESTADOS_ACTIVOS = new Set(['pendiente', 'confirmada']);
+const HORAS_SIN_CANCELACION = 24;
 const TIPOS_USUARIO = new Set(['cliente', 'emprendedor']);
 
-function finEvento(evento) {
-    const fechaFin = new Date(`${evento.fecha}T23:59:59`);
-    if (Number.isNaN(fechaFin.getTime())) {
-        return new Date(`${evento.fecha}T23:59:59`);
-    }
-    return fechaFin;
+function finFecha(fecha) {
+    return new Date(`${fecha}T23:59:59`);
 }
 
-function inicioEvento(evento) {
-    const horario = /^\d{2}:\d{2}$/.test(evento.horario ?? '') ? evento.horario : '00:00';
-    return new Date(`${evento.fecha}T${horario}:00`);
+function limiteContactoReserva(fecha) {
+    return new Date(`${fecha}T00:00:00`).getTime() - 7 * 24 * 60 * 60 * 1000;
+}
+
+function inicioFecha(fecha, horario) {
+    const hora = /^(\d{2}:\d{2})/.exec(horario ?? '')?.[1] ?? '00:00';
+    return new Date(`${fecha}T${hora}:00`);
+}
+
+function esFechaValida(fecha) {
+    if (typeof fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+        return false;
+    }
+    const fechaLocal = new Date(`${fecha}T00:00:00`);
+    return !Number.isNaN(fechaLocal.getTime()) && fechaLocal.toISOString().slice(0, 10) === fecha;
+}
+
+function cupoEnFecha(concurso, fecha) {
+    return concurso.cupos?.[fecha] ?? 0;
+}
+
+function normalizarFechas(fechas) {
+    if (!Array.isArray(fechas) || !fechas.length || !fechas.every(esFechaValida)) {
+        throw new BadRequestError('Ingresá al menos una fecha válida');
+    }
+    const ordenadas = [...new Set(fechas)].sort();
+    if (new Set(ordenadas.map((fecha) => fecha.slice(0, 7))).size !== 1) {
+        throw new BadRequestError('Todas las fechas del evento deben ser del mismo mes');
+    }
+    if (ordenadas.some((fecha) => finFecha(fecha).getTime() < Date.now())) {
+        throw new BadRequestError('No se pueden cargar fechas que ya pasaron');
+    }
+    return ordenadas;
+}
+
+function urlImagenValida(url) {
+    try {
+        return ['http:', 'https:'].includes(new URL(url).protocol);
+    } catch {
+        return false;
+    }
 }
 
 function normalizarEmail(email) {
@@ -196,39 +230,8 @@ export class SistemaService {
         if (token) this.sesiones.delete(token);
     }
 
-    iniciarAdministrador(datos = {}) {
-        const { email, nombre, contrasena, clave } = datos ?? {};
-        if (!process.env.ADMIN_SETUP_KEY) {
-            throw new ServiceUnavailableError('La configuración de la cuenta inicial de administrador no está habilitada');
-        }
-        if (clave !== process.env.ADMIN_SETUP_KEY) {
-            throw new BadRequestError('La clave de configuración no es válida');
-        }
-        if (this.datos.usuarios.some((usuario) => usuario.tipo === 'administrador')) {
-            throw new ConflictError('La cuenta inicial de administrador ya fue creada');
-        }
-        validarDatosUsuario({ email, nombre, contrasena, fechaNacimiento: '1900-01-01' }, {
-            exigirTipo: false,
-        });
-        const emailNormalizado = normalizarEmail(email);
-        if (this.datos.usuarios.some((usuario) => usuario.email === emailNormalizado)) {
-            throw new ConflictError('Ya existe una cuenta con ese email');
-        }
-        const usuario = {
-            id: this.repository.siguienteId('usuario'),
-            nombre: nombre.trim(),
-            email: emailNormalizado,
-            contrasenaHash: crearHash(contrasena),
-            fechaNacimiento: '1900-01-01',
-            tipo: 'administrador',
-            fechaRegistro: new Date().toISOString(),
-        };
-        this.datos.usuarios.push(usuario);
-        this.guardar();
-        return this.iniciarSesionInterno(usuario);
-    }
-
     listarEventos() {
+        this.purgarEventosVencidos();
         return this.datos.eventos.map((evento) => ({
             ...evento,
             cantidadStands: this.datos.stands.filter((stand) => stand.eventoId === evento.id).length,
@@ -237,16 +240,20 @@ export class SistemaService {
     }
 
     obtenerEvento(eventoId) {
+        this.purgarEventosVencidos();
         const evento = this.datos.eventos.find((item) => item.id === Number(eventoId));
         if (!evento) throw new NotFoundError('El evento no existe');
         return evento;
     }
 
-    listarStands(eventoId) {
+    listarStands(eventoId, fecha) {
         const evento = this.obtenerEvento(eventoId);
-        this.finalizarReservasVencidas(evento);
+        const fechaSeleccionada = fecha ?? evento.fechas[0];
+        if (!evento.fechas.includes(fechaSeleccionada)) {
+            throw new BadRequestError('La fecha no corresponde a este evento');
+        }
         return this.datos.stands
-            .filter((stand) => stand.eventoId === evento.id)
+            .filter((stand) => stand.eventoId === evento.id && stand.fecha === fechaSeleccionada)
             .map((stand) => {
                 const reservaActiva = this.datos.reservas.find(
                     (reserva) => reserva.standId === stand.id && ESTADOS_ACTIVOS.has(reserva.estado)
@@ -259,23 +266,32 @@ export class SistemaService {
             });
     }
 
-    listarConcursos(eventoId) {
+    listarConcursos(eventoId, fecha) {
         const evento = this.obtenerEvento(eventoId);
+        const fechaSeleccionada = fecha ?? evento.fechas[0];
+        if (!evento.fechas.includes(fechaSeleccionada)) {
+            throw new BadRequestError('La fecha no corresponde a este evento');
+        }
         return this.datos.concursos
             .filter((concurso) => concurso.eventoId === evento.id)
             .map((concurso) => {
-                const inscriptos = this.datos.inscripciones.filter((inscripcion) => inscripcion.concursoId === concurso.id);
+                const cupo = cupoEnFecha(concurso, fechaSeleccionada);
+                const inscriptos = this.datos.inscripciones.filter(
+                    (inscripcion) => inscripcion.concursoId === concurso.id && inscripcion.fecha === fechaSeleccionada
+                );
                 return {
                     ...concurso,
+                    fecha: fechaSeleccionada,
+                    cupo,
                     cantidadInscriptos: inscriptos.length,
-                    cuposDisponibles: Math.max(0, concurso.cupo - inscriptos.length),
-                    completo: inscriptos.length >= concurso.cupo,
+                    cuposDisponibles: Math.max(0, cupo - inscriptos.length),
+                    completo: inscriptos.length >= cupo,
                 };
             });
     }
 
     listarReservas(usuarioId) {
-        this.finalizarReservasVencidas();
+        this.purgarEventosVencidos();
         return this.datos.reservas
             .filter((reserva) => reserva.emprendedorId === usuarioId)
             .map((reserva) => this.reservaCompleta(reserva));
@@ -290,7 +306,7 @@ export class SistemaService {
             evento: {
                 id: evento.id,
                 nombre: evento.nombre,
-                fecha: evento.fecha,
+                fecha: reserva.fecha,
                 horario: evento.horario,
                 ubicacion: evento.ubicacion,
                 tematica: evento.tematica,
@@ -300,18 +316,55 @@ export class SistemaService {
         };
     }
 
-    finalizarReservasVencidas(eventoFiltrado = null) {
+    purgarEventosVencidos() {
         const ahora = Date.now();
-        let cambio = false;
-        for (const reserva of this.datos.reservas) {
-            if (!ESTADOS_ACTIVOS.has(reserva.estado)) continue;
-            const evento = eventoFiltrado ?? this.datos.eventos.find((item) => item.id === reserva.eventoId);
-            if (!evento || evento.id !== reserva.eventoId || finEvento(evento).getTime() >= ahora) continue;
-            reserva.estado = 'finalizada';
-            reserva.fechaFinalizacion = new Date(ahora).toISOString();
-            cambio = true;
-        }
-        if (cambio) this.guardar();
+        this.purgarReservasSinContacto(ahora);
+        const vencidos = this.datos.eventos.filter(
+            (evento) => evento.fechas.every((fecha) => finFecha(fecha).getTime() < ahora)
+        );
+        if (!vencidos.length) return;
+        this.quitarEventos(new Set(vencidos.map((evento) => evento.id)));
+    }
+
+    purgarReservasSinContacto(ahora) {
+        const cantidad = this.datos.reservas.length;
+        this.datos.reservas = this.datos.reservas.filter(
+            (reserva) => reserva.estado !== 'confirmada' || limiteContactoReserva(reserva.fecha) > ahora
+        );
+        if (this.datos.reservas.length !== cantidad) this.guardar();
+    }
+
+    quitarEventos(idsEventos) {
+        const idsConcursos = new Set(
+            this.datos.concursos.filter((concurso) => idsEventos.has(concurso.eventoId)).map((concurso) => concurso.id)
+        );
+        this.datos.inscripciones = this.datos.inscripciones.filter((item) => !idsConcursos.has(item.concursoId));
+        this.datos.concursos = this.datos.concursos.filter((concurso) => !idsEventos.has(concurso.eventoId));
+        this.datos.reservas = this.datos.reservas.filter((reserva) => !idsEventos.has(reserva.eventoId));
+        this.datos.stands = this.datos.stands.filter((stand) => !idsEventos.has(stand.eventoId));
+        this.datos.eventos = this.datos.eventos.filter((evento) => !idsEventos.has(evento.id));
+        this.guardar();
+    }
+
+    eliminarEvento(id) {
+        const evento = this.datos.eventos.find((item) => item.id === Number(id));
+        if (!evento) throw new NotFoundError('El evento no existe');
+        this.quitarEventos(new Set([evento.id]));
+    }
+
+    eliminarConcurso(id) {
+        const concurso = this.datos.concursos.find((item) => item.id === Number(id));
+        if (!concurso) throw new NotFoundError('El concurso no existe');
+        this.datos.inscripciones = this.datos.inscripciones.filter((item) => item.concursoId !== concurso.id);
+        this.datos.concursos = this.datos.concursos.filter((item) => item.id !== concurso.id);
+        this.guardar();
+    }
+
+    eliminarNovedad(id) {
+        const novedad = this.datos.novedades.find((item) => item.id === Number(id));
+        if (!novedad) throw new NotFoundError('La publicación no existe');
+        this.datos.novedades = this.datos.novedades.filter((item) => item.id !== novedad.id);
+        this.guardar();
     }
 
     solicitarReserva(usuario, { eventoId, standId }) {
@@ -319,13 +372,13 @@ export class SistemaService {
             throw new BadRequestError('Solo las cuentas de emprendedor pueden solicitar un stand');
         }
         const evento = this.obtenerEvento(eventoId);
-        if (inicioEvento(evento).getTime() <= Date.now()) {
-            throw new ConflictError('No se puede solicitar un stand para un evento que ya comenzó');
-        }
         const stand = this.datos.stands.find(
             (item) => item.id === Number(standId) && item.eventoId === evento.id
         );
         if (!stand) throw new NotFoundError('El stand no existe para este evento');
+        if (inicioFecha(stand.fecha, evento.horario).getTime() <= Date.now()) {
+            throw new ConflictError('No se puede solicitar un stand para una fecha que ya comenzó');
+        }
 
         if (this.datos.reservas.some(
             (reserva) =>
@@ -340,8 +393,8 @@ export class SistemaService {
         )) {
             throw new ConflictError('Ese stand ya está ocupado');
         }
-        if (!this.listarStands(evento.id).some((item) => item.disponible)) {
-            throw new ConflictError('No quedan stands disponibles para este evento');
+        if (!this.listarStands(evento.id, stand.fecha).some((item) => item.disponible)) {
+            throw new ConflictError('No quedan stands disponibles para esta fecha');
         }
 
         const reserva = {
@@ -349,6 +402,7 @@ export class SistemaService {
             emprendedorId: usuario.id,
             eventoId: evento.id,
             standId: stand.id,
+            fecha: stand.fecha,
             estado: 'pendiente',
             fechaSolicitud: new Date().toISOString(),
         };
@@ -357,35 +411,29 @@ export class SistemaService {
         return this.reservaCompleta(reserva);
     }
 
-    cancelarReserva(usuario, reservaId) {
-        this.finalizarReservasVencidas();
+    eliminarReservaPropia(usuario, reservaId) {
+        this.purgarEventosVencidos();
         const reserva = this.datos.reservas.find((item) => item.id === Number(reservaId));
-        if (!reserva || (usuario.tipo !== 'administrador' && reserva.emprendedorId !== usuario.id)) {
+        if (!reserva || reserva.emprendedorId !== usuario.id) {
             throw new NotFoundError('La reserva no existe');
         }
-        if (!ESTADOS_ACTIVOS.has(reserva.estado)) {
-            throw new ConflictError('La reserva ya no se puede cancelar');
-        }
         const evento = this.obtenerEvento(reserva.eventoId);
-        const limite = inicioEvento(evento).getTime() - 24 * 60 * 60 * 1000;
-        if (Date.now() >= limite) {
-            throw new ConflictError('No se puede cancelar dentro de las 24 horas previas al evento');
+        if (inicioFecha(reserva.fecha, evento.horario).getTime() - Date.now() < HORAS_SIN_CANCELACION * 60 * 60 * 1000) {
+            throw new ConflictError('No se puede eliminar la reserva durante las 24 horas previas al evento');
         }
-        reserva.estado = 'cancelada';
-        reserva.fechaCancelacion = new Date().toISOString();
+        this.datos.reservas = this.datos.reservas.filter((item) => item.id !== reserva.id);
         this.guardar();
-        return this.reservaCompleta(reserva);
     }
 
     listarReservasAdministrador() {
-        this.finalizarReservasVencidas();
+        this.purgarEventosVencidos();
         return this.datos.reservas
             .map((reserva) => this.reservaCompleta(reserva))
             .sort((a, b) => b.fechaSolicitud.localeCompare(a.fechaSolicitud));
     }
 
     resolverReserva(reservaId, estado) {
-        this.finalizarReservasVencidas();
+        this.purgarEventosVencidos();
         if (!['confirmada', 'cancelada'].includes(estado)) {
             throw new BadRequestError('El estado debe ser confirmada o cancelada');
         }
@@ -405,27 +453,33 @@ export class SistemaService {
         return this.reservaCompleta(reserva);
     }
 
-    inscribirEnConcurso(usuario, concursoId) {
+    inscribirEnConcurso(usuario, concursoId, fecha) {
         if (usuario.tipo !== 'cliente') {
             throw new BadRequestError('Solo las cuentas de cliente pueden inscribirse a concursos');
         }
         const concurso = this.datos.concursos.find((item) => item.id === Number(concursoId));
         if (!concurso) throw new NotFoundError('El concurso no existe');
         const evento = this.obtenerEvento(concurso.eventoId);
-        if (inicioEvento(evento).getTime() <= Date.now()) {
-            throw new ConflictError('No se puede inscribir en un concurso de un evento que ya comenzó');
+        if (!evento.fechas.includes(fecha)) {
+            throw new BadRequestError('La fecha no corresponde a este evento');
+        }
+        if (finFecha(fecha).getTime() < Date.now()) {
+            throw new ConflictError('No se puede inscribir en una fecha que ya pasó');
         }
         const yaInscripto = this.datos.inscripciones.some(
-            (item) => item.concursoId === concurso.id && item.clienteId === usuario.id
+            (item) => item.concursoId === concurso.id && item.clienteId === usuario.id && item.fecha === fecha
         );
-        if (yaInscripto) throw new ConflictError('Ya estás inscripto en este concurso');
-        const cantidad = this.datos.inscripciones.filter((item) => item.concursoId === concurso.id).length;
-        if (cantidad >= concurso.cupo) throw new ConflictError('El concurso ya completó sus cupos');
+        if (yaInscripto) throw new ConflictError('Ya estás inscripto en este concurso para esta fecha');
+        const cantidad = this.datos.inscripciones.filter(
+            (item) => item.concursoId === concurso.id && item.fecha === fecha
+        ).length;
+        if (cantidad >= cupoEnFecha(concurso, fecha)) throw new ConflictError('El concurso ya completó sus cupos para esta fecha');
 
         const inscripcion = {
             id: this.repository.siguienteId('inscripcion'),
             clienteId: usuario.id,
             concursoId: concurso.id,
+            fecha,
             fechaInscripcion: new Date().toISOString(),
         };
         this.datos.inscripciones.push(inscripcion);
@@ -439,36 +493,94 @@ export class SistemaService {
     listarInscripciones(usuarioId) {
         return this.datos.inscripciones
             .filter((inscripcion) => inscripcion.clienteId === usuarioId)
-            .map((inscripcion) => {
-                const concurso = this.datos.concursos.find((item) => item.id === inscripcion.concursoId);
-                return {
-                    ...inscripcion,
-                    concurso: concurso ? { id: concurso.id, nombre: concurso.nombre, eventoId: concurso.eventoId } : null,
-                };
-            });
+            .map((inscripcion) => this.inscripcionCompleta(inscripcion));
+    }
+
+    listarInscripcionesAdministrador() {
+        this.purgarEventosVencidos();
+        return this.datos.inscripciones.map((inscripcion) => ({
+            ...this.inscripcionCompleta(inscripcion),
+            cliente: this.clienteResumen(inscripcion.clienteId),
+        }));
+    }
+
+    clienteResumen(clienteId) {
+        const cliente = this.datos.usuarios.find((usuario) => usuario.id === clienteId);
+        return cliente ? { id: cliente.id, nombre: cliente.nombre, email: cliente.email } : null;
+    }
+
+    inscripcionCompleta(inscripcion) {
+        const concurso = this.datos.concursos.find((item) => item.id === inscripcion.concursoId);
+        const evento = concurso ? this.obtenerEvento(concurso.eventoId) : null;
+        return {
+            ...inscripcion,
+            concurso: concurso ? { id: concurso.id, nombre: concurso.nombre, eventoId: concurso.eventoId } : null,
+            evento: evento ? { id: evento.id, nombre: evento.nombre, horario: evento.horario, ubicacion: evento.ubicacion } : null,
+        };
+    }
+
+    cancelarInscripcion(usuario, inscripcionId) {
+        this.purgarEventosVencidos();
+        const inscripcion = this.datos.inscripciones.find((item) => item.id === Number(inscripcionId));
+        if (!inscripcion || inscripcion.clienteId !== usuario.id) {
+            throw new NotFoundError('La inscripción no existe');
+        }
+        const evento = this.obtenerEvento(this.datos.concursos.find((item) => item.id === inscripcion.concursoId).eventoId);
+        const limite = inicioFecha(inscripcion.fecha, evento.horario).getTime() - 24 * 60 * 60 * 1000;
+        if (Date.now() >= limite) {
+            throw new ConflictError('No se puede cancelar la inscripción dentro de las 24 horas previas al evento');
+        }
+        this.datos.inscripciones = this.datos.inscripciones.filter((item) => item.id !== inscripcion.id);
+        this.guardar();
+    }
+
+    eliminarInscripcion(id) {
+        const inscripcion = this.datos.inscripciones.find((item) => item.id === Number(id));
+        if (!inscripcion) throw new NotFoundError('La inscripción no existe');
+        this.datos.inscripciones = this.datos.inscripciones.filter((item) => item.id !== inscripcion.id);
+        this.guardar();
+    }
+
+    eliminarReserva(id) {
+        const reserva = this.datos.reservas.find((item) => item.id === Number(id));
+        if (!reserva) throw new NotFoundError('La reserva no existe');
+        this.datos.reservas = this.datos.reservas.filter((item) => item.id !== reserva.id);
+        this.guardar();
     }
 
     crearEvento(datos) {
         if (
             !datos ||
             typeof datos.nombre !== 'string' || !datos.nombre.trim() ||
-            typeof datos.tematica !== 'string' ||
-            typeof datos.fecha !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(datos.fecha) ||
-            Number.isNaN(new Date(`${datos.fecha}T00:00:00`).getTime()) ||
-            new Date(`${datos.fecha}T00:00:00`).toISOString().slice(0, 10) !== datos.fecha
+            typeof datos.tematica !== 'string'
         ) {
-            throw new BadRequestError('Completá nombre, temática y una fecha válida');
+            throw new BadRequestError('Completá nombre y temática');
+        }
+        const fechas = normalizarFechas(datos.fechas);
+        const mes = fechas[0].slice(0, 7);
+        if (this.datos.eventos.some((evento) => evento.mes === mes)) {
+            throw new ConflictError('Ya existe un evento para ese mes');
+        }
+        const hoy = new Date();
+        const mesCreacion = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+        if (this.datos.eventos.some((evento) => evento.creadoEn === mesCreacion)) {
+            throw new ConflictError('Ya creaste un evento este mes. Podrás crear otro cuando termine el mes');
         }
         const evento = {
             id: this.repository.siguienteId('evento'),
             nombre: datos.nombre.trim(),
             tematica: datos.tematica.trim(),
-            fecha: datos.fecha,
-            horario: typeof datos.horario === 'string' ? datos.horario.trim() : '',
+            mes,
+            creadoEn: mesCreacion,
+            fechas,
+            horario: HORARIO_EVENTO,
             descripcion: typeof datos.descripcion === 'string' ? datos.descripcion.trim() : '',
-            ubicacion: typeof datos.ubicacion === 'string' ? datos.ubicacion.trim() : '',
+            ubicacion: UBICACION_EVENTO,
         };
         this.datos.eventos.push(evento);
+        for (const fecha of fechas) {
+            this.repository.asegurarMesas(evento.id, fecha);
+        }
         this.guardar();
         return evento;
     }
@@ -476,16 +588,7 @@ export class SistemaService {
     actualizarEvento(eventoId, datos) {
         const evento = this.obtenerEvento(eventoId);
         datos ??= {};
-        const fecha = datos.fecha ?? evento.fecha;
-        if (
-            typeof fecha !== 'string' ||
-            !/^\d{4}-\d{2}-\d{2}$/.test(fecha) ||
-            Number.isNaN(new Date(`${fecha}T00:00:00`).getTime()) ||
-            new Date(`${fecha}T00:00:00`).toISOString().slice(0, 10) !== fecha
-        ) {
-            throw new BadRequestError('Ingresá una fecha válida');
-        }
-        for (const campo of ['nombre', 'tematica', 'horario', 'descripcion', 'ubicacion']) {
+        for (const campo of ['nombre', 'tematica', 'descripcion']) {
             if (datos[campo] !== undefined && typeof datos[campo] !== 'string') {
                 throw new BadRequestError(`El campo ${campo} debe ser texto`);
             }
@@ -493,63 +596,94 @@ export class SistemaService {
         if (datos.nombre !== undefined && !datos.nombre.trim()) {
             throw new BadRequestError('Ingresá el nombre del evento');
         }
-        evento.nombre = (datos.nombre ?? evento.nombre ?? '').trim();
-        evento.tematica = (datos.tematica ?? evento.tematica ?? '').trim();
-        evento.fecha = fecha;
-        evento.horario = (datos.horario ?? evento.horario ?? '').trim();
+        const fechas = datos.fechas === undefined ? evento.fechas : normalizarFechas(datos.fechas);
+        if (fechas[0].slice(0, 7) !== evento.mes) {
+            throw new BadRequestError('Las fechas deben ser del mes del evento');
+        }
+
+        const fechasQuitadas = evento.fechas.filter((fecha) => !fechas.includes(fecha));
+        const reservasDeFechasQuitadas = (reserva) =>
+            reserva.eventoId === evento.id && fechasQuitadas.includes(reserva.fecha);
+        if (this.datos.reservas.some(
+            (reserva) => reservasDeFechasQuitadas(reserva) && ESTADOS_ACTIVOS.has(reserva.estado)
+        )) {
+            throw new ConflictError('No se puede quitar una fecha con reservas activas');
+        }
+        this.datos.reservas = this.datos.reservas.filter((reserva) => !reservasDeFechasQuitadas(reserva));
+        this.datos.stands = this.datos.stands.filter(
+            (stand) => !(stand.eventoId === evento.id && fechasQuitadas.includes(stand.fecha))
+        );
+        const concursosDelEvento = this.datos.concursos.filter((concurso) => concurso.eventoId === evento.id);
+        for (const concurso of concursosDelEvento) {
+            for (const fecha of fechasQuitadas) delete concurso.cupos[fecha];
+        }
+        const idsConcursosDelEvento = new Set(concursosDelEvento.map((concurso) => concurso.id));
+        this.datos.inscripciones = this.datos.inscripciones.filter(
+            (inscripcion) => !(idsConcursosDelEvento.has(inscripcion.concursoId) && fechasQuitadas.includes(inscripcion.fecha))
+        );
+        for (const fecha of fechas) {
+            this.repository.asegurarMesas(evento.id, fecha);
+        }
+
+        evento.nombre = (datos.nombre ?? evento.nombre).trim();
+        evento.tematica = (datos.tematica ?? evento.tematica).trim();
         evento.descripcion = (datos.descripcion ?? evento.descripcion ?? '').trim();
-        evento.ubicacion = (datos.ubicacion ?? evento.ubicacion ?? '').trim();
+        evento.fechas = fechas;
+        evento.horario = HORARIO_EVENTO;
+        evento.ubicacion = UBICACION_EVENTO;
         this.guardar();
         return evento;
     }
 
-    crearStand(eventoId, datos) {
-        const evento = this.obtenerEvento(eventoId);
-        if (!datos || typeof datos.nombre !== 'string' || !datos.nombre.trim()) {
-            throw new BadRequestError('Ingresá el nombre del stand');
-        }
-        if (
-            datos.precio !== null &&
-            datos.precio !== undefined &&
-            datos.precio !== '' &&
-            !['number', 'string'].includes(typeof datos.precio)
-        ) {
-            throw new BadRequestError('El precio debe ser un número igual o mayor a cero');
-        }
-        const stand = {
-            id: this.repository.siguienteId('stand'),
-            eventoId: evento.id,
-            nombre: datos.nombre.trim(),
-            precio: datos.precio === null || datos.precio === undefined || datos.precio === ''
-                ? null
-                : Number(datos.precio),
-        };
-        if (stand.precio !== null && (!Number.isFinite(stand.precio) || stand.precio < 0)) {
-            throw new BadRequestError('El precio debe ser un número igual o mayor a cero');
-        }
-        this.datos.stands.push(stand);
-        this.guardar();
-        return stand;
-    }
-
     crearConcurso(eventoId, datos) {
         const evento = this.obtenerEvento(eventoId);
-        if (
-            !datos || typeof datos.nombre !== 'string' || !datos.nombre.trim() ||
-            !Number.isInteger(Number(datos.cupo)) || Number(datos.cupo) < 1
-        ) {
-            throw new BadRequestError('Ingresá el nombre del concurso y un cupo mayor a cero');
+        if (!datos || typeof datos.nombre !== 'string' || !datos.nombre.trim()) {
+            throw new BadRequestError('Ingresá el nombre del concurso');
+        }
+        const cupos = {};
+        for (const fecha of evento.fechas) {
+            const cupo = Number(datos.cupos?.[fecha]);
+            if (!Number.isInteger(cupo) || cupo < 1) {
+                throw new BadRequestError('Ingresá un cupo mayor a cero para cada fecha del evento');
+            }
+            cupos[fecha] = cupo;
         }
         const concurso = {
             id: this.repository.siguienteId('concurso'),
             eventoId: evento.id,
             nombre: datos.nombre.trim(),
             descripcion: typeof datos.descripcion === 'string' ? datos.descripcion.trim() : '',
-            cupo: Number(datos.cupo),
+            cupos,
         };
         this.datos.concursos.push(concurso);
         this.guardar();
         return concurso;
+    }
+
+    listarNovedades() {
+        return [...this.datos.novedades].sort((a, b) => b.id - a.id);
+    }
+
+    crearNovedad(datos) {
+        const imagen = typeof datos?.imagen === 'string' ? datos.imagen.trim() : '';
+        if (
+            !datos ||
+            typeof datos.titulo !== 'string' || !datos.titulo.trim() ||
+            typeof datos.texto !== 'string' || !datos.texto.trim() ||
+            (imagen && !urlImagenValida(imagen))
+        ) {
+            throw new BadRequestError('Completá el título y el texto; la imagen debe ser un link http o https');
+        }
+        const novedad = {
+            id: this.repository.siguienteId('novedad'),
+            titulo: datos.titulo.trim(),
+            texto: datos.texto.trim(),
+            imagen: imagen || null,
+            fechaCreacion: new Date().toISOString(),
+        };
+        this.datos.novedades.push(novedad);
+        this.guardar();
+        return novedad;
     }
 
     listarUsuarios() {

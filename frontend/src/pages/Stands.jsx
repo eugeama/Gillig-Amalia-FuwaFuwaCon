@@ -3,36 +3,40 @@ import AvisoApi from "../components/AvisoApi";
 import Boton from "../components/Boton";
 import Cargando from "../components/Cargando";
 import PaginaParticipacion from "../components/PaginaParticipacion";
-import SelectorEvento from "../components/SelectorEvento";
+import SelectorFechas from "../components/SelectorFechas";
 import { solicitarReserva as crearReserva } from "../services/reservaService";
 import { getStands } from "../services/eventoService";
 import { useAuth } from "../utils/auth";
+import { planoMesas } from "../utils/contenido";
+import { fechasVigentes, proximoEvento } from "../utils/fechas";
 import { useNotificaciones } from "../utils/notificaciones";
 import useEventos from "../hooks/useEventos";
 
 function Stands({ onNavegar, parametros }) {
   const { usuario } = useAuth();
   const { exito, error } = useNotificaciones();
-  const { eventos, cargando: cargandoEventos } = useEventos();
-  const [eventoId, setEventoId] = useState(parametros?.eventoId ? String(parametros.eventoId) : "");
+  const { eventos } = useEventos();
+  const [fechaElegida, setFechaElegida] = useState(parametros?.fecha ?? "");
   const [stands, setStands] = useState([]);
   const [cargandoStands, setCargandoStands] = useState(false);
   const [falloCarga, setFalloCarga] = useState(false);
   const [standId, setStandId] = useState("");
   const [solicitando, setSolicitando] = useState(false);
   const [recarga, setRecarga] = useState(0);
+  const [mostrarUbicaciones, setMostrarUbicaciones] = useState(false);
+
+  const evento = eventos.find((item) => String(item.id) === String(parametros?.eventoId)) ?? proximoEvento(eventos);
+  const eventoId = evento ? String(evento.id) : "";
+  const fechas = fechasVigentes(evento);
+  const fecha = fechas.includes(fechaElegida) ? fechaElegida : fechas[0];
 
   useEffect(() => {
-    if (!eventoId && eventos.length > 0) setEventoId(String(eventos[0].id));
-  }, [eventoId, eventos]);
-
-  useEffect(() => {
-    if (!eventoId) return;
+    if (!eventoId || !fecha) return;
     let activo = true;
     setCargandoStands(true);
     setFalloCarga(false);
 
-    getStands(eventoId)
+    getStands(eventoId, fecha)
       .then((resultado) => {
         if (activo) setStands(resultado);
       })
@@ -49,7 +53,7 @@ function Stands({ onNavegar, parametros }) {
     return () => {
       activo = false;
     };
-  }, [eventoId, error, recarga]);
+  }, [eventoId, fecha, error, recarga]);
 
   async function solicitar() {
     if (!usuario) {
@@ -70,7 +74,7 @@ function Stands({ onNavegar, parametros }) {
       const reserva = await crearReserva({ eventoId: Number(eventoId), standId: Number(standId) });
       exito(`Solicitud ${reserva.id} enviada. Quedó pendiente de revisión.`);
       setStandId("");
-      setStands(await getStands(eventoId));
+      setStands(await getStands(eventoId, fecha));
     } catch (err) {
       error(err.message);
     } finally {
@@ -85,15 +89,17 @@ function Stands({ onNavegar, parametros }) {
       titulo="Stands del evento"
       descripcion="Consultá la disponibilidad y solicitá una mesa para tu emprendimiento."
     >
-      <SelectorEvento
-        eventos={eventos}
-        eventoSeleccionado={eventoId}
-        onCambiar={(id) => {
-          setEventoId(id);
-          setStandId("");
-        }}
-        cargando={cargandoEventos}
-      />
+      <Boton variante="secundario" onClick={() => onNavegar("eventos", { eventoId })}>Volver al evento</Boton>
+      {fechas.length > 0 && (
+        <SelectorFechas
+          fechas={fechas}
+          seleccionada={fecha}
+          onCambiar={(nueva) => {
+            setFechaElegida(nueva);
+            setStandId("");
+          }}
+        />
+      )}
       {cargandoStands && <Cargando mensaje="Consultando disponibilidad..." />}
       {!cargandoStands && falloCarga && (
         <div className="panel-participacion">
@@ -121,6 +127,10 @@ function Stands({ onNavegar, parametros }) {
                 ))}
               </div>
             )}
+            <Boton variante="secundario" onClick={() => setMostrarUbicaciones((actual) => !actual)} aria-expanded={mostrarUbicaciones}>
+              Ver ubicaciones
+            </Boton>
+            {mostrarUbicaciones && <img className="plano-mesas" src={planoMesas.imagen} alt={planoMesas.alt} />}
           </section>
           <section className="panel-participacion" aria-labelledby="solicitud-stand">
             <h2 id="solicitud-stand" className="titulo-secundario">Solicitar una mesa</h2>

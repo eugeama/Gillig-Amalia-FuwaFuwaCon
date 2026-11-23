@@ -21,7 +21,7 @@ function Carrusel({ diapositivas, onVerMas }) {
       </button>
 
       <div className="carrusel__contenido" aria-live="polite">
-        <Imagen src={actual.imagen} alt={`${actual.titulo}: ${actual.descripcion}`} className="carrusel__imagen" />
+        <Imagen src={actual.imagen} alt={actual.titulo} className="carrusel__imagen" />
         <div className="carrusel__detalle">
           <h3 className="carrusel__titulo">{actual.titulo}</h3>
           <p>{actual.texto}</p>

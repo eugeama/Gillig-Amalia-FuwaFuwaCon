@@ -6,10 +6,22 @@ const DEFAULT_DATA_PATH =
     process.env.DATA_FILE ??
     path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data/fuwafuwacon.json');
 
+export const HORARIO_EVENTO = '12:00 a 19:00';
+export const UBICACION_EVENTO = 'Av. Eva Perón 1400';
+const TOTAL_MESAS = 110;
+const MESAS_INTERIORES = { desde: 42, hasta: 69 };
+const PRECIO_MESA_INTERIOR = 50000;
+const PRECIO_MESA_EXTERIOR = 30000;
+
 function proximaFechaEvento() {
     const hoy = new Date();
     const anio = hoy.getFullYear() + (hoy.getMonth() >= 6 ? 1 : 0);
     return `${anio}-07-12`;
+}
+
+function precioMesa(numero) {
+    const esInterior = numero >= MESAS_INTERIORES.desde && numero <= MESAS_INTERIORES.hasta;
+    return esInterior ? PRECIO_MESA_INTERIOR : PRECIO_MESA_EXTERIOR;
 }
 
 function crearDatosIniciales() {
@@ -22,25 +34,22 @@ function crearDatosIniciales() {
             concurso: 1,
             reserva: 1,
             inscripcion: 1,
+            novedad: 1,
         },
         usuarios: [],
         eventos: [
             {
                 id: 1,
                 nombre: 'FuwaFuwaCon',
-                tematica: 'A confirmar',
-                fecha: proximaFechaEvento(),
-                horario: 'A confirmar',
+                tematica: '',
+                mes: proximaFechaEvento().slice(0, 7),
+                fechas: [proximaFechaEvento()],
+                horario: HORARIO_EVENTO,
                 descripcion: 'Fecha indicada en el boceto del proyecto.',
-                ubicacion: 'A confirmar',
+                ubicacion: UBICACION_EVENTO,
             },
         ],
-        stands: Array.from({ length: 9 }, (_, indice) => ({
-            id: indice + 1,
-            eventoId: 1,
-            nombre: `Mesa ${String(indice + 1).padStart(2, '0')}`,
-            precio: null,
-        })),
+        stands: [],
         concursos: [
             {
                 id: 1,
@@ -52,6 +61,7 @@ function crearDatosIniciales() {
         ],
         reservas: [],
         inscripciones: [],
+        novedades: [],
     };
 }
 
@@ -84,6 +94,7 @@ export class SistemaRepository {
         this.datos.concursos ??= iniciales.concursos;
         this.datos.reservas ??= [];
         this.datos.inscripciones ??= [];
+        this.datos.novedades ??= [];
 
         for (const [tipo, propiedad] of [
             ['usuario', 'usuarios'],
@@ -92,12 +103,47 @@ export class SistemaRepository {
             ['concurso', 'concursos'],
             ['reserva', 'reservas'],
             ['inscripcion', 'inscripciones'],
+            ['novedad', 'novedades'],
         ]) {
             const idMaximo = this.datos[propiedad].reduce((maximo, elemento) => Math.max(maximo, elemento.id), 0);
             this.datos.secuencias[tipo] = Math.max(this.datos.secuencias[tipo] ?? 1, idMaximo + 1);
         }
 
+        for (const evento of this.datos.eventos) {
+            evento.fechas ??= [evento.fecha];
+            delete evento.fecha;
+            evento.mes = evento.fechas[0].slice(0, 7);
+            evento.horario = HORARIO_EVENTO;
+            evento.ubicacion = UBICACION_EVENTO;
+        }
+        for (const stand of this.datos.stands) {
+            stand.fecha ??= this.datos.eventos.find((evento) => evento.id === stand.eventoId)?.fechas[0];
+        }
+        for (const reserva of this.datos.reservas) {
+            reserva.fecha ??= this.datos.stands.find((stand) => stand.id === reserva.standId)?.fecha;
+        }
+        for (const evento of this.datos.eventos) {
+            for (const fecha of evento.fechas) {
+                this.asegurarMesas(evento.id, fecha);
+            }
+        }
+
         this.guardar();
+    }
+
+    asegurarMesas(eventoId, fecha) {
+        for (let numero = 1; numero <= TOTAL_MESAS; numero += 1) {
+            const nombre = `Mesa ${String(numero).padStart(2, '0')}`;
+            const precio = precioMesa(numero);
+            const stand = this.datos.stands.find(
+                (item) => item.eventoId === eventoId && item.fecha === fecha && item.nombre === nombre
+            );
+            if (stand) {
+                stand.precio = precio;
+            } else {
+                this.datos.stands.push({ id: this.siguienteId('stand'), eventoId, fecha, nombre, precio });
+            }
+        }
     }
 
     guardar() {

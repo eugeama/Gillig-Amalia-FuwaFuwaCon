@@ -12,6 +12,26 @@ function crearSistema(t) {
     return new SistemaService(new SistemaRepository(path.join(directorio, 'datos.json')));
 }
 
+function fijarFechaEvento(sistema, fecha) {
+    const evento = sistema.datos.eventos[0];
+    evento.fechas = [fecha];
+    evento.mes = fecha.slice(0, 7);
+    for (const stand of sistema.datos.stands) stand.fecha = fecha;
+    for (const reserva of sistema.datos.reservas) reserva.fecha = fecha;
+    sistema.guardar();
+    return evento;
+}
+
+function fechaDentroDe(dias) {
+    const fecha = new Date();
+    fecha.setDate(fecha.getDate() + dias);
+    return [
+        fecha.getFullYear(),
+        String(fecha.getMonth() + 1).padStart(2, '0'),
+        String(fecha.getDate()).padStart(2, '0'),
+    ].join('-');
+}
+
 function nuevoUsuario(email, tipo = 'cliente') {
     return {
         nombre: 'Persona de prueba',
@@ -57,30 +77,55 @@ test('permite una solicitud activa por persona y evento y bloquea un stand ocupa
     assert.throws(() => sistema.solicitarReserva(otraEmprendedora, { eventoId: evento.id, standId: primerStand.id }), /ocupado/);
 });
 
-test('cancelar una solicitud libera el stand y el plazo se aplica también en el servidor', (t) => {
+test('el emprendedor puede borrar su reserva confirmada o pendiente con más de 24 horas de anticipación', (t) => {
     const sistema = crearSistema(t);
-    const emprendedor = sistema.registrar(nuevoUsuario('cancelar@example.com', 'emprendedor')).usuario;
-    const evento = sistema.datos.eventos[0];
-    evento.fecha = '2035-07-12';
-    sistema.guardar();
+    const emprendedor = sistema.registrar(nuevoUsuario('borrar@example.com', 'emprendedor')).usuario;
+    const evento = fijarFechaEvento(sistema, fechaDentroDe(30));
+    const stand = sistema.datos.stands[0];
+    const reserva = sistema.solicitarReserva(emprendedor, { eventoId: evento.id, standId: stand.id });
+    sistema.resolverReserva(reserva.id, 'confirmada');
+
+    sistema.eliminarReservaPropia(emprendedor, reserva.id);
+    assert.equal(sistema.datos.reservas.some((item) => item.id === reserva.id), false);
+    assert.equal(sistema.listarStands(evento.id).find((item) => item.id === stand.id).disponible, true);
+});
+
+test('el emprendedor no puede borrar su reserva durante las 24 horas previas al evento', (t) => {
+    const sistema = crearSistema(t);
+    const emprendedor = sistema.registrar(nuevoUsuario('tarde@example.com', 'emprendedor')).usuario;
+    const evento = fijarFechaEvento(sistema, fechaDentroDe(30));
     const stand = sistema.datos.stands[0];
     const reserva = sistema.solicitarReserva(emprendedor, { eventoId: evento.id, standId: stand.id });
 
-    const cancelada = sistema.cancelarReserva(emprendedor, reserva.id);
-    assert.equal(cancelada.estado, 'cancelada');
-    assert.equal(sistema.listarStands(evento.id).find((item) => item.id === stand.id).disponible, true);
+    const manana = fechaDentroDe(1);
+    evento.fechas = [manana];
+    evento.horario = '00:00 a 23:59';
+    sistema.datos.reservas.find((item) => item.id === reserva.id).fecha = manana;
+    assert.throws(() => sistema.eliminarReservaPropia(emprendedor, reserva.id), /24 horas/);
+    assert.equal(sistema.datos.reservas.some((item) => item.id === reserva.id), true);
+});
 
-    const otraReserva = sistema.solicitarReserva(emprendedor, { eventoId: evento.id, standId: stand.id });
-    evento.fecha = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    sistema.guardar();
-    assert.throws(() => sistema.cancelarReserva(emprendedor, otraReserva.id), /24 horas/);
+test('elimina las reservas confirmadas una semana antes del evento', (t) => {
+    const sistema = crearSistema(t);
+    const emprendedor = sistema.registrar(nuevoUsuario('contacto@example.com', 'emprendedor')).usuario;
+    const evento = fijarFechaEvento(sistema, fechaDentroDe(8));
+    const stand = sistema.datos.stands[0];
+    const reserva = sistema.solicitarReserva(emprendedor, { eventoId: evento.id, standId: stand.id });
+    sistema.resolverReserva(reserva.id, 'confirmada');
+
+    sistema.listarEventos();
+    assert.equal(sistema.datos.reservas.some((item) => item.id === reserva.id), true);
+
+    sistema.datos.reservas.find((item) => item.id === reserva.id).fecha = fechaDentroDe(6);
+    sistema.listarEventos();
+    assert.equal(sistema.datos.reservas.some((item) => item.id === reserva.id), false);
+    assert.equal(sistema.listarStands(evento.id).find((item) => item.id === stand.id).disponible, true);
 });
 
 test('el administrador solo confirma solicitudes pendientes y libera las rechazadas', (t) => {
     const sistema = crearSistema(t);
     const emprendedor = sistema.registrar(nuevoUsuario('admin-flow@example.com', 'emprendedor')).usuario;
-    const evento = sistema.datos.eventos[0];
-    evento.fecha = '2035-07-12';
+    const evento = fijarFechaEvento(sistema, '2035-07-12');
     const stand = sistema.datos.stands[0];
     const reserva = sistema.solicitarReserva(emprendedor, { eventoId: evento.id, standId: stand.id });
 
@@ -91,44 +136,105 @@ test('el administrador solo confirma solicitudes pendientes y libera las rechaza
         { eventoId: evento.id, standId: sistema.datos.stands[1].id }
     );
     assert.equal(sistema.resolverReserva(otra.id, 'cancelada').estado, 'cancelada');
-    assert.equal(sistema.listarStands(evento.id).find((item) => item.id === sistema.datos.stands[1].id).disponible, true);
-});
-
-test('el concurso no acepta duplicados ni inscripciones una vez lleno', (t) => {
-    const sistema = crearSistema(t);
-    const evento = sistema.datos.eventos[0];
-    const concurso = sistema.datos.concursos[0];
-    concurso.cupo = 1;
-    const cliente = sistema.registrar(nuevoUsuario('concurso@example.com')).usuario;
-
-    assert.equal(sistema.inscribirEnConcurso(cliente, concurso.id).concurso.id, concurso.id);
-    assert.equal(sistema.listarConcursos(evento.id)[0].cuposDisponibles, 0);
-    assert.throws(() => sistema.inscribirEnConcurso(cliente, concurso.id), /Ya estás inscripto/);
-    assert.throws(
-        () => sistema.inscribirEnConcurso(sistema.registrar(nuevoUsuario('completo@example.com')).usuario, concurso.id),
-        /completó sus cupos/
+    assert.equal(
+        sistema.listarStands(evento.id, '2035-07-12').find((item) => item.id === sistema.datos.stands[1].id).disponible,
+        true
     );
 });
 
-test('finaliza automáticamente las reservas cuando termina el día del evento', (t) => {
+test('el concurso tiene cupos por fecha y no acepta duplicados ni inscripciones una vez lleno', (t) => {
+    const sistema = crearSistema(t);
+    const evento = sistema.datos.eventos[0];
+    evento.fechas = ['2099-01-10', '2099-01-11'];
+    const [primeraFecha, segundaFecha] = evento.fechas;
+    const concurso = sistema.datos.concursos[0];
+    concurso.cupos = { [primeraFecha]: 1, [segundaFecha]: 2 };
+    const cliente = sistema.registrar(nuevoUsuario('concurso@example.com')).usuario;
+
+    assert.equal(sistema.inscribirEnConcurso(cliente, concurso.id, primeraFecha).concurso.id, concurso.id);
+    const cuposEn = (fecha) => sistema.listarConcursos(evento.id, fecha).find((item) => item.id === concurso.id).cuposDisponibles;
+    assert.equal(cuposEn(primeraFecha), 0);
+    assert.equal(cuposEn(segundaFecha), 2);
+    assert.throws(() => sistema.inscribirEnConcurso(cliente, concurso.id, primeraFecha), /Ya estás inscripto/);
+    assert.throws(
+        () => sistema.inscribirEnConcurso(sistema.registrar(nuevoUsuario('completo@example.com')).usuario, concurso.id, primeraFecha),
+        /completó sus cupos/
+    );
+    assert.equal(sistema.inscribirEnConcurso(cliente, concurso.id, segundaFecha).fecha, segundaFecha);
+});
+
+test('elimina el evento, sus stands y reservas automáticamente después de la última fecha', (t) => {
     const sistema = crearSistema(t);
     const emprendedor = sistema.registrar(nuevoUsuario('fin-evento@example.com', 'emprendedor')).usuario;
-    const evento = sistema.datos.eventos[0];
-    evento.fecha = '2000-07-12';
-    const stand = sistema.datos.stands[0];
-    const reserva = {
-        id: 1,
+    const evento = fijarFechaEvento(sistema, '2000-07-12');
+    sistema.datos.reservas.push({
+        id: sistema.repository.siguienteId('reserva'),
         emprendedorId: emprendedor.id,
         eventoId: evento.id,
-        standId: stand.id,
+        standId: sistema.datos.stands[0].id,
+        fecha: '2000-07-12',
         estado: 'confirmada',
-    };
-    sistema.datos.reservas.push(reserva);
+    });
 
-    const estado = sistema.listarStands(evento.id).find((item) => item.id === stand.id);
-    assert.equal(estado.disponible, true);
-    assert.equal(sistema.datos.reservas.find((item) => item.id === reserva.id).estado, 'finalizada');
-    assert.equal(sistema.listarReservas(emprendedor.id)[0].estado, 'finalizada');
+    assert.equal(sistema.listarEventos().length, 0);
+    assert.equal(sistema.datos.stands.length, 0);
+    assert.equal(sistema.datos.reservas.length, 0);
+});
+
+test('el administrador elimina un evento con sus concursos e inscripciones, y un concurso o publicación por separado', (t) => {
+    const sistema = crearSistema(t);
+    const evento = sistema.datos.eventos[0];
+    const concurso = sistema.datos.concursos[0];
+    concurso.cupos = { [evento.fechas[0]]: 5 };
+    const cliente = sistema.registrar(nuevoUsuario('borrado@example.com')).usuario;
+    sistema.inscribirEnConcurso(cliente, concurso.id, evento.fechas[0]);
+    const novedad = sistema.crearNovedad({ titulo: 'Publicación', texto: 'Texto' });
+
+    sistema.eliminarNovedad(novedad.id);
+    assert.equal(sistema.datos.novedades.some((item) => item.id === novedad.id), false);
+
+    sistema.eliminarConcurso(concurso.id);
+    assert.equal(sistema.datos.concursos.some((item) => item.id === concurso.id), false);
+    assert.equal(sistema.datos.inscripciones.length, 0);
+
+    sistema.eliminarEvento(evento.id);
+    assert.equal(sistema.listarEventos().some((item) => item.id === evento.id), false);
+    assert.throws(() => sistema.eliminarEvento(evento.id), /no existe/);
+});
+
+test('crea eventos con varias fechas del mismo mes y solo uno por mes', (t) => {
+    const sistema = crearSistema(t);
+    const evento = sistema.crearEvento({
+        nombre: 'Agosto',
+        tematica: 'Anime',
+        fechas: ['2035-08-11', '2035-08-10'],
+    });
+
+    assert.equal(evento.mes, '2035-08');
+    assert.deepEqual(evento.fechas, ['2035-08-10', '2035-08-11']);
+    assert.equal(sistema.listarStands(evento.id, '2035-08-11').length, 110);
+    assert.throws(() => sistema.crearEvento({ nombre: 'Otro', tematica: 'Anime', fechas: ['2035-08-20'] }), /Ya existe un evento para ese mes/);
+    assert.throws(() => sistema.crearEvento({ nombre: 'Mixto', tematica: 'Anime', fechas: ['2035-09-01', '2035-10-01'] }), /mismo mes/);
+});
+
+test('no permite crear otro evento hasta que termine el mes de creación', (t) => {
+    const sistema = crearSistema(t);
+    const hoy = new Date();
+    const fechaFutura = (meses) => {
+        const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + meses, 15);
+        return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-15`;
+    };
+    sistema.crearEvento({ nombre: 'Primero', tematica: 'Anime', fechas: [fechaFutura(2)] });
+    assert.throws(
+        () => sistema.crearEvento({ nombre: 'Segundo', tematica: 'Anime', fechas: [fechaFutura(3)] }),
+        /Ya creaste un evento este mes/
+    );
+});
+
+test('valida que la imagen de una publicación sea un link http o https', (t) => {
+    const sistema = crearSistema(t);
+    assert.throws(() => sistema.crearNovedad({ titulo: 'Novedad', texto: 'Texto', imagen: 'javascript:alert(1)' }), /link/);
+    assert.equal(sistema.crearNovedad({ titulo: 'Novedad', texto: 'Texto', imagen: 'https://example.com/a.png' }).imagen, 'https://example.com/a.png');
 });
 
 test('persiste el catálogo y las inscripciones sin guardar sesiones ni contraseñas en claro', (t) => {
@@ -142,5 +248,5 @@ test('persiste el catálogo y las inscripciones sin guardar sesiones ni contrase
     assert.equal(reconstruido.obtenerSesion(cuenta.token), null);
     assert.equal(reconstruido.datos.usuarios[0].email, 'persistencia@example.com');
     assert.notEqual(reconstruido.datos.usuarios[0].contrasenaHash, 'abcdefgh12!');
-    assert.equal(reconstruido.listarEventos()[0].cantidadStands, 9);
+    assert.equal(reconstruido.listarEventos()[0].cantidadStands, 110);
 });

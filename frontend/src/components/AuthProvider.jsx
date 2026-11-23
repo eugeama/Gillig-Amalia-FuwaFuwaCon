@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { cerrarSesion, crearAdministradorInicial, iniciarSesion, obtenerUsuarioActual, registrarUsuario } from "../services/authService";
+import { cerrarSesion, iniciarSesion, obtenerUsuarioActual, registrarUsuario } from "../services/authService";
 import { AuthContext } from "../utils/auth";
 import { useNotificaciones } from "../utils/notificaciones";
 
@@ -38,7 +38,6 @@ function AuthProvider({ children }) {
     cargandoSesion,
     ingresar: (datos) => actualizarUsuario(() => iniciarSesion(datos)),
     registrar: (datos) => actualizarUsuario(() => registrarUsuario(datos)),
-    crearAdministrador: (datos) => actualizarUsuario(() => crearAdministradorInicial(datos)),
     salir: async () => {
       await cerrarSesion();
       setUsuario(null);

@@ -1,9 +1,9 @@
 import express from 'express';
-import clienteRoutes from './routes/clienteRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import eventoRoutes from './routes/eventoRoutes.js';
 import reservaRoutes from './routes/reservaRoutes.js';
 import concursoRoutes from './routes/concursoRoutes.js';
+import novedadRoutes from './routes/novedadRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import errorHandler from './middlewares/errorHandler.js';
 
@@ -16,8 +16,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/eventos', eventoRoutes);
 app.use('/api/reservas', reservaRoutes);
 app.use('/api/concursos', concursoRoutes);
+app.use('/api/novedades', novedadRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/clientes', clienteRoutes);
 
 app.use((req, res) => {
     res.status(404).json({
@@ -30,7 +30,6 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
     console.log(`Servidor de FuwaFuwaCon ejecutándose en el puerto ${PORT}`);
-    console.log(`Ruta base del CRUD: http://localhost:${PORT}/api/clientes`);
 });
 
 export default app;

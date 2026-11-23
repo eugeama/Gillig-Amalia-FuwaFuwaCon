@@ -27,7 +27,6 @@ function responderSesion(res, sesion, status = 200) {
 
 router.post('/registro', manejar((req, res) => responderSesion(res, SistemaService.registrar(req.body), 201)));
 router.post('/login', manejar((req, res) => responderSesion(res, SistemaService.iniciarSesion(req.body))));
-router.post('/bootstrap-admin', manejar((req, res) => responderSesion(res, SistemaService.iniciarAdministrador(req.body), 201)));
 router.get('/me', manejar((req, res) => res.json(ApiResponse.success(
     SistemaService.obtenerSesion(obtenerToken(req))
 ))));

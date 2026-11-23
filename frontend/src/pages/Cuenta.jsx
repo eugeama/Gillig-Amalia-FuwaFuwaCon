@@ -2,6 +2,7 @@ import { useState } from "react";
 import AvisoApi from "../components/AvisoApi";
 import Boton from "../components/Boton";
 import CampoFormulario from "../components/CampoFormulario";
+import MisInscripciones from "../components/MisInscripciones";
 import MisReservas from "../components/MisReservas";
 import PaginaParticipacion from "../components/PaginaParticipacion";
 import { useAuth } from "../utils/auth";
@@ -15,7 +16,6 @@ const VALORES_INICIALES = {
   contrasena: "",
   fechaNacimiento: "",
   tipo: "cliente",
-  clave: "",
 };
 
 function Cuenta({ onNavegar }) {
@@ -23,7 +23,7 @@ function Cuenta({ onNavegar }) {
   const [valores, setValores] = useState(VALORES_INICIALES);
   const [errores, setErrores] = useState({});
   const [enviando, setEnviando] = useState(false);
-  const { usuario, ingresar, registrar, crearAdministrador, salir } = useAuth();
+  const { usuario, ingresar, registrar, salir } = useAuth();
   const { exito, error } = useNotificaciones();
   const registro = modo === "registro";
 
@@ -41,19 +41,7 @@ function Cuenta({ onNavegar }) {
 
   async function enviar(evento) {
     evento.preventDefault();
-    const nuevosErrores = registro ? validarRegistro(valores) : modo === "ingreso" ? validarAcceso(valores) : {};
-
-    if (modo === "administrador") {
-      if (!valores.nombre.trim()) nuevosErrores.nombre = "El nombre es obligatorio";
-      if (!valores.clave) nuevosErrores.clave = "La clave de configuración es obligatoria";
-      Object.assign(nuevosErrores, validarAcceso(valores));
-      const contraseñaValida = validarRegistro({
-        ...valores,
-        tipo: "cliente",
-        fechaNacimiento: "2000-01-01",
-      });
-      if (contraseñaValida.contrasena) nuevosErrores.contrasena = contraseñaValida.contrasena;
-    }
+    const nuevosErrores = registro ? validarRegistro(valores) : validarAcceso(valores);
 
     setErrores(nuevosErrores);
     if (Object.keys(nuevosErrores).length > 0) {
@@ -67,7 +55,7 @@ function Cuenta({ onNavegar }) {
       if (modo === "ingreso") {
         await ingresar({ email: valores.email, contrasena: valores.contrasena });
         exito("Sesión iniciada correctamente");
-      } else if (registro) {
+      } else {
         await registrar({
           nombre: valores.nombre.trim(),
           email: valores.email.trim(),
@@ -79,14 +67,6 @@ function Cuenta({ onNavegar }) {
             : {}),
         });
         exito("Cuenta creada correctamente");
-      } else {
-        await crearAdministrador({
-          nombre: valores.nombre.trim(),
-          email: valores.email.trim(),
-          contrasena: valores.contrasena,
-          clave: valores.clave,
-        });
-        exito("Cuenta de administración inicial creada");
       }
       setValores(VALORES_INICIALES);
     } catch (err) {
@@ -130,6 +110,7 @@ function Cuenta({ onNavegar }) {
           </section>
         )}
         {usuario.tipo === "emprendedor" && <MisReservas onNavegar={onNavegar} />}
+        {usuario.tipo === "cliente" && <MisInscripciones />}
       </PaginaParticipacion>
     );
   }
@@ -139,10 +120,7 @@ function Cuenta({ onNavegar }) {
       titulo="Mi cuenta"
       descripcion="Ingresá con tu cuenta o registrate como cliente o emprendedor."
     >
-      <AvisoApi>
-        La contraseña se guarda cifrada en el servidor. No compartas la clave de configuración
-        del administrador: se usa una sola vez para crear la primera cuenta administrativa.
-      </AvisoApi>
+      <AvisoApi>La contraseña se guarda cifrada en el servidor.</AvisoApi>
       <div className="cuenta-opciones" role="group" aria-label="Elegir formulario">
         <Boton variante={modo === "ingreso" ? "principal" : "secundario"} aria-pressed={modo === "ingreso"} onClick={() => cambiarModo("ingreso")}>
           Iniciar sesión
@@ -150,15 +128,12 @@ function Cuenta({ onNavegar }) {
         <Boton variante={registro ? "principal" : "secundario"} aria-pressed={registro} onClick={() => cambiarModo("registro")}>
           Registrarme
         </Boton>
-        <Boton variante={modo === "administrador" ? "principal" : "secundario"} aria-pressed={modo === "administrador"} onClick={() => cambiarModo("administrador")}>
-          Configurar administrador
-        </Boton>
       </div>
       <form className="formulario" onSubmit={enviar} noValidate aria-labelledby="cuenta-formulario">
         <h2 id="cuenta-formulario" className="titulo-secundario">
-          {modo === "administrador" ? "Primer administrador" : registro ? "Crear cuenta" : "Iniciar sesión"}
+          {registro ? "Crear cuenta" : "Iniciar sesión"}
         </h2>
-        {(registro || modo === "administrador") && (
+        {registro && (
           <CampoFormulario
             id="nombre"
             etiqueta="Nombre"
@@ -232,20 +207,8 @@ function Cuenta({ onNavegar }) {
             required
           />
         )}
-        {modo === "administrador" && (
-          <CampoFormulario
-            id="clave"
-            etiqueta="Clave de configuración"
-            type="password"
-            value={valores.clave}
-            error={errores.clave}
-            onChange={cambiarCampo}
-            autoComplete="off"
-            required
-          />
-        )}
         <Boton type="submit" disabled={enviando}>
-          {enviando ? "Procesando..." : modo === "administrador" ? "Crear administrador" : registro ? "Crear cuenta" : "Iniciar sesión"}
+          {enviando ? "Procesando..." : registro ? "Crear cuenta" : "Iniciar sesión"}
         </Boton>
       </form>
     </PaginaParticipacion>
